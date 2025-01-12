@@ -1,22 +1,18 @@
 package com.foke.together.external.camera.internal
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Matrix
-import android.hardware.camera2.CaptureRequest
-import android.os.SystemClock
 import android.util.Log
-import android.util.Range
-import android.util.Size
 import androidx.annotation.OptIn
 import androidx.camera.camera2.Camera2Config
-import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.AspectRatio
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.CameraXConfig
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -30,19 +26,19 @@ import javax.inject.Singleton
 
 @Module
 @InstallIn(SingletonComponent::class)
-object CameraModule {
-    private val TAG = CameraModule::class.java.simpleName
-    private var cameraExecutorService : ExecutorService? = null
-
+object InternalCameraModule {
+    private val TAG = InternalCameraModule::class.java.simpleName
+    private var analyzeExecutorService : ExecutorService? = null
+    private var captureExecutorService : ExecutorService? = null
 
     // CameraX ImageAnalyzer용 백그라운드 서비스
     @Provides
     @Singleton
-    fun clearCameraExecutor(): Boolean{
-        cameraExecutorService?.shutdown()
-        cameraExecutorService?.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS)
-        cameraExecutorService = null
-        return cameraExecutorService == null
+    fun clearAnalyzeExecutor(): Boolean{
+        analyzeExecutorService?.shutdown()
+        analyzeExecutorService?.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS)
+        analyzeExecutorService = null
+        return analyzeExecutorService == null
     }
 
     @Provides
@@ -65,30 +61,30 @@ object CameraModule {
     @Provides
     @Singleton
     fun provideImageAnalysis(
-        rotation: Int
+        context: Context
     ): ImageAnalysis {
         val iaBuilder = ImageAnalysis.Builder()
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-            .setTargetRotation(rotation)
+            .setTargetRotation(context.display.rotation)
             .setTargetAspectRatio(AspectRatio.RATIO_4_3)
         return iaBuilder.build()
     }
 
     @Provides
     @Singleton
-    fun provideCameraExecutor(): ExecutorService {
-        if(cameraExecutorService == null){
-            cameraExecutorService = Executors.newSingleThreadExecutor()
+    fun provideAnalyzeExecutor(): ExecutorService {
+        if(analyzeExecutorService == null){
+            analyzeExecutorService = Executors.newSingleThreadExecutor()
         }
-        return cameraExecutorService!!
+        return analyzeExecutorService!!
     }
 
     fun shutdown(){
-        if(cameraExecutorService != null) {
-            cameraExecutorService?.shutdown()
-            cameraExecutorService?.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS)
-            cameraExecutorService = null
+        if(analyzeExecutorService != null) {
+            analyzeExecutorService?.shutdown()
+            analyzeExecutorService?.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS)
+            analyzeExecutorService = null
         }
     }
 
@@ -104,9 +100,29 @@ object CameraModule {
     @Provides
     @Singleton
     fun provideCameraStatus(): Flow<Boolean> = flow {
-        emit(cameraExecutorService != null)
+        emit(analyzeExecutorService != null)
     }
 
+    @Provides
+    @Singleton
+    fun provideCameraPreview(
+        previewView: PreviewView
+    ): Preview {
+        return Preview.Builder().build().also{
+            it.surfaceProvider = previewView.surfaceProvider
+        }
+    }
+
+    @Provides
+    @Singleton
+    fun provideImageCapture(
+        context: Context
+    ): ImageCapture {
+        return ImageCapture.Builder()
+            .setTargetRotation(context.display.rotation)
+            .setTargetAspectRatio(AspectRatio.RATIO_4_3)
+            .build()
+    }
     // 미디어 파이프 제공하기 위함
 //    @Provides
 //    @Singleton
